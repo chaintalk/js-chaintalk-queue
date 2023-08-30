@@ -1,5 +1,5 @@
 {
-	"name": "js-chaintalk-queue",
+	"name": "chaintalk-queue",
 	"version": "1.0.0",
 	"description": "ChainTalk Queue",
 	"main": "dist/index.js",
@@ -14,7 +14,6 @@
 		"build": "npm run clean && tsc",
 		"test": "jest"
 	},
-	"author": "",
 	"devDependencies": {
 		"@babel/preset-env": "^7.21.5",
 		"@babel/preset-typescript": "^7.21.5",
@@ -29,5 +28,10 @@
 	"dependencies": {
 		"chaintalk-utils": "^1.0.25",
 		"ioredis": "^5.3.2"
-	}
+	},
+	"author": "ChainTalk, Team.",
+	"homepage": "https://github.com/chaintalk/",
+	"contributors": [
+		"Chain Talk, Team. <chaintalk@outlook.com>"
+	]
 }

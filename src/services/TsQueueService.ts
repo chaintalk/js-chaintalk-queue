@@ -1,12 +1,10 @@
 import { ITsQueue } from "../interfaces/ITsQueue";
-import { TsQueueMember, TsQueuePullOptions, TsQueuePullResult } from "../models/TsQueueModels";
+import { TsQueueConnectOptions, TsQueueMember, TsQueuePullOptions, TsQueuePullResult } from "../models/TsQueueModels";
 import { PageUtil, TypeUtil } from "chaintalk-utils";
 import Redis from "ioredis";
 import { defaultTsQueuePullResult } from "../constants/TsQueueContants";
 import { TsQueueMemberEncoder } from "../utils/TsQueueMemberEncoder";
-import { Callback } from "ioredis/built/types";
-import { RedisKey, Result } from "ioredis/built/utils/RedisCommander";
-
+import { RedisOptions } from "ioredis/built/redis/RedisOptions";
 
 
 /**
@@ -14,11 +12,53 @@ import { RedisKey, Result } from "ioredis/built/utils/RedisCommander";
  */
 export class TsQueueService implements ITsQueue
 {
-	private redis : Redis = new Redis();
+	protected redis : Redis | null = null;
 
-	constructor()
+	constructor
+	(
+		portOrPath ?: number | string,
+		hostOrOptions ?: string | TsQueueConnectOptions,
+		options ?: TsQueueConnectOptions
+	)
 	{
+		if ( 'number' === typeof portOrPath )
+		{
+			//	portOrPath is number of port
+			const port = Number( portOrPath );
+
+			if ( 'string' === typeof hostOrOptions )
+			{
+				//	hostOrOptions is a string of host
+				const host : string = String( hostOrOptions );
+				if ( options )
+				{
+					this.redis = new Redis( port, host, options );
+				}
+				else
+				{
+					this.redis = new Redis( port, host );
+				}
+			}
+			else if ( hostOrOptions )
+			{
+				//	hostOrOptions is options
+				const redisOptions: RedisOptions = hostOrOptions;
+				this.redis = new Redis( port, redisOptions );
+			}
+		}
+		else if ( TypeUtil.isString( portOrPath ) )
+		{
+			//	a socket path
+			//	e.g. : new Redis( "/tmp/redis.sock" );
+			const socketPath = String( portOrPath );
+			this.redis = new Redis( socketPath );
+		}
+		else
+		{
+			this.redis = new Redis();
+		}
 	}
+
 
 	/**
 	 * 	@returns {Promise<boolean>}
@@ -36,7 +76,7 @@ export class TsQueueService implements ITsQueue
 				}
 				else
 				{
-					reject( `Redis is not initialized` );
+					reject( `not initialized` );
 				}
 			}
 			catch ( err )
@@ -47,7 +87,7 @@ export class TsQueueService implements ITsQueue
 	}
 
 	/**
-	 * 	push a time serial data
+	 * 	Enqueue : insert a time serial data at the end of the queue
 	 *	@param channel		{string}
 	 *	@param timestamp	{number}
 	 *	@param data		{object}
@@ -58,6 +98,11 @@ export class TsQueueService implements ITsQueue
 		{
 			try
 			{
+				if ( ! this.redis )
+				{
+					return reject( `not initialized` );
+				}
+
 				const member : TsQueueMember = {
 					channel : channel,
 					timestamp : timestamp,
@@ -99,7 +144,15 @@ export class TsQueueService implements ITsQueue
 		{
 			try
 			{
-				if ( endTimestamp > 0 && endTimestamp < startTimestamp )
+				if ( ! this.redis )
+				{
+					return reject( `not initialized` );
+				}
+				if ( startTimestamp < 0 )
+				{
+					return reject( `invalid startTimestamp` );
+				}
+				if ( endTimestamp < startTimestamp )
 				{
 					return reject( `invalid endTimestamp` );
 				}
@@ -145,21 +198,52 @@ export class TsQueueService implements ITsQueue
 		});
 	}
 
-
-	public remove( channel : string, startTimestamp : number, endTimestamp : number ) : Promise<boolean>
+	/**
+	 * 	Dequeue : remove data from the head of the queue
+	 *
+	 *	remove all the members from head in a sorted set within the given scores
+	 * 	@param channel		{string}
+	 * 	@param endTimestamp	{number}
+	 * 	@returns {Promise<number>}
+	 */
+	public removeFromHead( channel : string, endTimestamp : number ) : Promise<number>
 	{
-		/**
-		 * Remove all members in a sorted set within the given scores
-		 * - _group_: sorted-set
-		 * - _complexity_: O(log(N)+M) with N being the number of elements in the sorted set and M the number of elements removed by the operation.
-		 * - _since_: 1.2.0
-		 */
-		//zremrangebyscore(key: RedisKey, min: number | string, max: number | string, callback?: Callback<number>): Result<number, Context>;
-		return Promise.resolve( false );
+		return this.remove( channel, 0, endTimestamp );
 	}
 
-	public removeFromHead( channel : string, endTimestamp : number ) : Promise<boolean>
+	/**
+	 * 	remove all the members in a sorted set within the given scores
+	 *	@param channel		{string}
+	 *	@param startTimestamp	{number}
+	 *	@param endTimestamp	{number}
+	 *	@returns {Promise<number>}
+	 */
+	public remove( channel : string, startTimestamp : number, endTimestamp : number ) : Promise<number>
 	{
-		return Promise.resolve( false );
+		return new Promise( async ( resolve, reject ) =>
+		{
+			try
+			{
+				if ( ! this.redis )
+				{
+					return reject( `not initialized` );
+				}
+				if ( startTimestamp < 0 )
+				{
+					return reject( `invalid startTimestamp` );
+				}
+				if ( endTimestamp < startTimestamp )
+				{
+					return reject( `invalid endTimestamp` );
+				}
+
+				const result : number = await this.redis.zremrangebyscore( channel, startTimestamp, endTimestamp );
+				resolve( result );
+			}
+			catch ( err )
+			{
+				reject( err );
+			}
+		});
 	}
 }
